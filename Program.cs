@@ -8,25 +8,26 @@ namespace lab1
     {
         static readonly int M = 7; //Количество элементов алфавита автомата
         static readonly int N = 6; //Количество состояний автомата
-        static readonly int G = 5; //Количество элементов алфавита магазина
+        static readonly int G = 3; //Количество элементов алфавита магазина
         static int P = 0; //Количество пар входного символа и символа с вершины магазина
                                     //Список допустимых типов переменных
        
 
-        enum ST : int { spaces = 0, getClass, getName, getParams, getParamName, halt }; //Список состояний автомата.
+        enum ST : int { start = 0, getClass, getName, getParams, getParamName, moreParams, halt }; //Список состояний автомата.
                                                                                      //Статусы ошибок возвращаемые функциями
         enum pN : int { Spc_Empty=0, Letter_Empty, Spc_Name, Letter_Name, Number_Empty, Spc_Params,
-                        Less_Empty, Less_Params, Great_Empty, Spc_MoreParams, Great_MoreParams, Spc_End,
-                        Halt_End, Comma_MoreParams, Spc_AddParam, Comma_Empty, Letter_AddParam };
+                        Less_Empty, Less_Params, Great_Params, Halt_Empty,  Letter_Params,
+                        Number_Params, Comma_Params, Spc_MoreParams, Letter_MoreParams};
         public enum RetCode : int { Success = 0, SyntaxError, TypeError, AlreadyDefinedError, ParamError }
         static List<char>[] alphabet; //Алфавит автомата
-        static char[] stack_alphabet = new char[] { 'n', 'p', 'm', 'e', 'a'}; //Алфавит магазина.  
-                                                           //n - читаем имя класса 
-                                                           //p - параметры (по символу <)  
-                                                           //m - дополинетльные параметры 
-                                                           //e - разбор закончен, читаем пробелы, ждем halt
-                                                           //a - использует getParams. После , добавляет дополнителные параметры
-        static string stack = "";
+        static char[] stack_alphabet = new char[] { 'n', '+', 'm' }; //Алфавит магазина.  
+                                                                              //n - читаем имя класса 
+                                                                              //+ - параметры
+                                                                              //a - надо добавить еще один параметр 
+        static Stack<char> stack = new Stack<char>();
+        const char NOTHING = '\0';
+        const char POP = '\r';
+        
         static readonly int EMPTY = -1;   //Магазин должен быть пуст
         static readonly int UNKNOWN = -2; //Используется как начальное неопределенное значение 
                                           //при определении принадлежнасти символа алфавиту магазина.
@@ -39,9 +40,9 @@ namespace lab1
         struct DeltaCell
         {
             public ST nextState;
-            public string stack;
+            public char stack;
             public string action;
-            DeltaCell(ST nextState, string stack, string action)
+            DeltaCell(ST nextState=ST.start, char stack=NOTHING, string action="")
             {
                 this.nextState = nextState;
                 this.stack = stack;
@@ -77,7 +78,7 @@ namespace lab1
         //Основной алгоритм конечного автомата
         public static RetCode runDMPA()
         {
-            ST curState = ST.spaces; //Текущее состояние автомата. Начальное: start
+            ST curState = ST.start; //Текущее состояние автомата. Начальное: start
             char input;
 
             while (true)
@@ -105,11 +106,11 @@ namespace lab1
                 //Определение необходимого состояния стека
                 int st_idx = UNKNOWN;
 
-                if (stack.Length == 0)
+                if (stack.Count== 0)
                     st_idx = EMPTY;
                 else
                 {
-                    char stack_top = stack[stack.Length - 1];
+                    char stack_top = stack.Peek();
                     for (int i = 0; i < G; i++)
                     {
                         if (stack_top == stack_alphabet[i])
@@ -140,7 +141,8 @@ namespace lab1
                 DeltaCell curCell = delta[(int)curState, pair];
                 //Если переменная магазина не проинициализированна значит переход 
                 //в таблицу не занесен. Можно было также проверить переменную действия.
-                if (curCell.stack == null) return RetCode.SyntaxError;
+                if (curCell.action == null)
+                    return RetCode.SyntaxError;
 
                 //Разбор успешно окончен. Достигнуто финальное состояние.
                 if (curCell.nextState == ST.halt)
@@ -169,7 +171,14 @@ namespace lab1
                 }
 
                 //Следующий переход
-                stack = curCell.stack;
+                if (curCell.stack != NOTHING)
+                {
+                    if (curCell.stack == POP)
+                        stack.Pop();
+                    else
+                        stack.Push(curCell.stack);
+                }
+
                 curState = curCell.nextState;
             }
         }
@@ -203,122 +212,132 @@ namespace lab1
 
             //Элемент конец входной цепочки
             alphabet[6] = new List<char> { (char)0 };
-
-            P = 17;
-            pairs = new int[,] { /*0: EmptyEmpty */{2, EMPTY }, /*1: LetterEmpty */{0, EMPTY },  /*2: EmptyName */ { 2, 0}, 
-                                 /*3 LetterName */ {0, 0}, /*4 NumberEmpty */ {1,EMPTY }, /*5 EmptyParams*/ {2, 1 },
-                                 /*6 LessEmpty */{4,EMPTY }, /*7 LessParams */ {4, 1}, /* 8 GreatEmpty */ { 5, EMPTY } , 
-                                 /*9 EmptyMoreParams */ { 2, 2}, /*10 GreatMoreParams */ {5,2}, /*11 EmptyEnd */ {2,3}, 
-                                 /*12 HaltEnd*/ {6,3}, /*13 Comma_MoreParams */ {3, 2}, /*14 Spc_AddParam */ {2,4},
-                                 /*15 Comma_Empty*/ {3, EMPTY }, /*Letter_AddParam */ {0,4 }
+            //Spc_Empty = 0, Letter_Empty, Spc_Name, Letter_Name, Number_Empty, Spc_Params,
+            //Less_Empty, Less_Params, Great_Empty, Spc_End, Halt_End, Letter_Params
+            P = 15;
+            pairs = new int[,] { /*0: Spc_Empty */{2, EMPTY }, /*1: Letter_Empty */{0, EMPTY },  /*2: Spc_Name */ { 2, 0}, 
+                                 /*3 Letter_Name */ {0, 0}, /*4 Number_Empty */ {1,EMPTY }, /*5 Spc_Params*/ {2, 1 },
+                                 /*6 Less_Empty */{4,EMPTY }, /*7 Less_Params */ {4, 1}, /*8 Great_Params */ { 5, 1} , 
+                                 /*9 Halt_EMPTY*/ {6,EMPTY}, /*10 Letter_Params*/ {0,1 }, /*11 Number_Params */{1,1 }, 
+                                 /*12 Comma_Params */ {3,1}, /*13 Spc_MoreParams */ {2, 2}, /*14 Letter_MoreParams */{0, 2}
                                 };
 
             //Инициализируем таблицу переходов
             delta = new DeltaCell[N, P];
             //0 начальные пробелы 
-            delta[(int)ST.spaces, (int)pN.Spc_Empty].nextState = ST.spaces;
-            delta[(int)ST.spaces, (int)pN.Spc_Empty].stack = "";
-            delta[(int)ST.spaces, (int)pN.Spc_Empty ].action = "";
+            delta[(int)ST.start, (int)pN.Spc_Empty].nextState = ST.start;
+            delta[(int)ST.start, (int)pN.Spc_Empty].action = "";
             //1 встретили букву, читаем слово class 
-            delta[(int)ST.spaces, (int)pN.Letter_Empty].nextState = ST.getClass;
-            delta[(int)ST.spaces, (int)pN.Letter_Empty].stack = "";
-            delta[(int)ST.spaces, (int)pN.Letter_Empty].action = "addBuf";
+            delta[(int)ST.start, (int)pN.Letter_Empty].nextState = ST.getClass;
+            delta[(int)ST.start, (int)pN.Letter_Empty].action = "addBuf";
             //1 читаем слово class 
             delta[(int)ST.getClass, (int)pN.Letter_Empty].nextState = ST.getClass;
-            delta[(int)ST.getClass, (int)pN.Letter_Empty].stack = "";
             delta[(int)ST.getClass, (int)pN.Letter_Empty].action = "addBuf";
             //0 пробел - проверяем что считанное слово class, идем читать имя
-            delta[(int)ST.getClass, (int)pN.Spc_Empty].nextState = ST.spaces;
-            delta[(int)ST.getClass, (int)pN.Spc_Empty].stack = "n";
+            delta[(int)ST.getClass, (int)pN.Spc_Empty].nextState = ST.getName;
+            delta[(int)ST.getClass, (int)pN.Spc_Empty].stack = 'n';
             delta[(int)ST.getClass, (int)pN.Spc_Empty].action = "checkClass";
-            //2 пробел - ждем имя класса 
-            delta[(int)ST.spaces, (int)pN.Spc_Name].nextState = ST.spaces;
-            delta[(int)ST.spaces, (int)pN.Spc_Name].stack = "n";
-            delta[(int)ST.spaces, (int)pN.Spc_Name].action = "";
-            //3 буква - читаем имя класса
-            delta[(int)ST.spaces, (int)pN.Letter_Name].nextState = ST.getName;
-            delta[(int)ST.spaces, (int)pN.Letter_Name].stack = "";
-            delta[(int)ST.spaces, (int)pN.Letter_Name].action = "addBuf";
-            //1 буква - читаем имя класса
+            // пропускаем пробелы
+            delta[(int)ST.getName, (int)pN.Spc_Name].nextState = ST.getName;
+            delta[(int)ST.getName, (int)pN.Spc_Name].action = "";
+            // Первая буква
+            delta[(int)ST.getName, (int)pN.Letter_Name].nextState = ST.getName;
+            delta[(int)ST.getName, (int)pN.Letter_Name].stack = POP;
+            delta[(int)ST.getName, (int)pN.Letter_Name].action = "addBuf";
+            //
             delta[(int)ST.getName, (int)pN.Letter_Empty].nextState = ST.getName;
-            delta[(int)ST.getName, (int)pN.Letter_Empty].stack = "";
             delta[(int)ST.getName, (int)pN.Letter_Empty].action = "addBuf";
             //4 цифра - читаем имя класса
             delta[(int)ST.getName, (int)pN.Number_Empty].nextState = ST.getName;
-            delta[(int)ST.getName, (int)pN.Number_Empty].stack = "";
             delta[(int)ST.getName, (int)pN.Number_Empty].action = "addBuf";
-            // пробел, проверяем имя класса - идем за параметрами 
+            // < добавляем имя класса - идем за параметрами 
             delta[(int)ST.getName, (int)pN.Less_Empty].nextState = ST.getParams;
-            delta[(int)ST.getName, (int)pN.Less_Empty].stack = "";
+            delta[(int)ST.getName, (int)pN.Less_Empty].stack = '+';
             delta[(int)ST.getName, (int)pN.Less_Empty].action = "addName";
-            //0 проверяем имя класса - ждем параметры
-            delta[(int)ST.getName, (int)pN.Spc_Empty].nextState = ST.spaces;
-            delta[(int)ST.getName, (int)pN.Spc_Empty].stack = "p";
+            // пробел добавляем имя класса - ждем параметры
+            delta[(int)ST.getName, (int)pN.Spc_Empty].nextState = ST.getName;
+            delta[(int)ST.getName, (int)pN.Spc_Empty].stack = '+';
             delta[(int)ST.getName, (int)pN.Spc_Empty].action = "addName";
-            //5 проблелы пропускаем - ждем параметры
-            delta[(int)ST.spaces, (int)pN.Spc_Params].nextState = ST.spaces;
-            delta[(int)ST.spaces, (int)pN.Spc_Params].stack = "p";
-            delta[(int)ST.spaces, (int)pN.Spc_Params].action = "";
-            //6 < - ждем параметры
-            delta[(int)ST.spaces, (int)pN.Less_Params].nextState = ST.getParams;
-            delta[(int)ST.spaces, (int)pN.Less_Params].stack = "";
-            delta[(int)ST.spaces, (int)pN.Less_Params].action = "";
-            //0 пропускаем проблелы, ждем начала параметра 
-            delta[(int)ST.getParams, (int)pN.Spc_Empty].nextState = ST.getParams;
-            delta[(int)ST.getParams, (int)pN.Spc_Empty].stack = "";
-            delta[(int)ST.getParams, (int)pN.Spc_Empty].action = "";
-            //1 буква, читаем имя параметра
-            delta[(int)ST.getParams, (int)pN.Letter_Empty].nextState = ST.getParamName;
-            delta[(int)ST.getParams, (int)pN.Letter_Empty].stack = "";
-            delta[(int)ST.getParams, (int)pN.Letter_Empty].action = "addBuf";
-            //1 буква, читаем имя параметра
-            delta[(int)ST.getParamName, (int)pN.Letter_Empty].nextState = ST.getParamName;
-            delta[(int)ST.getParamName, (int)pN.Letter_Empty].stack = "";
-            delta[(int)ST.getParamName, (int)pN.Letter_Empty].action = "addBuf";
-            //цифра, читаем имя параметра
-            delta[(int)ST.getParamName, (int)pN.Number_Empty].nextState = ST.getParamName;
-            delta[(int)ST.getParamName, (int)pN.Number_Empty].stack = "";
-            delta[(int)ST.getParamName, (int)pN.Number_Empty].action = "addBuf";
-            //пробел, читаем сохраняем имя параметра 
-            delta[(int)ST.getParamName, (int)pN.Spc_Empty].nextState = ST.getParams;
-            delta[(int)ST.getParamName, (int)pN.Spc_Empty].stack = "m";
-            delta[(int)ST.getParamName, (int)pN.Spc_Empty].action = "addParam";
-            //, сохраняем имя параметра 
-            delta[(int)ST.getParamName, (int)pN.Comma_Empty].nextState = ST.getParams;
-            delta[(int)ST.getParamName, (int)pN.Comma_Empty].stack = "ma";
-            delta[(int)ST.getParamName, (int)pN.Comma_Empty].action = "addParam";
-            //пробел, читаем сохраняем имя параметра 
-            delta[(int)ST.getParamName, (int)pN.Great_Empty].nextState = ST.spaces;
-            delta[(int)ST.getParamName, (int)pN.Great_Empty].stack = "e";
-            delta[(int)ST.getParamName, (int)pN.Great_Empty].action = "addParam";
-            //пробелы после первого параметра, ждем > , a
+            // пробел добавляем имя класса - ждем параметры
+            delta[(int)ST.getName, (int)pN.Spc_Params].nextState = ST.getName;
+            delta[(int)ST.getName, (int)pN.Spc_Params].action = "";
+            // < идем в getParams 
+            delta[(int)ST.getName, (int)pN.Less_Params].nextState = ST.getParams;
+            delta[(int)ST.getName, (int)pN.Less_Params].action ="";
+            //0 проверяем имя класса - ждем параметры
+            delta[(int)ST.getName, (int)pN.Spc_Params].nextState = ST.getName;
+            delta[(int)ST.getName, (int)pN.Spc_Params].action = "";
+            // < идем в getParams
+            delta[(int)ST.getName, (int)pN.Less_Params].nextState = ST.getParams;
+            delta[(int)ST.getName, (int)pN.Less_Params].action = "";
+            // пропускаем пробелы 
+            delta[(int)ST.getParams, (int)pN.Spc_Params].nextState = ST.getParams;
+            delta[(int)ST.getParams, (int)pN.Spc_Params].action = "";
+            // > закончили текущий параметр 
+            delta[(int)ST.getParams, (int)pN.Great_Params].nextState = ST.getParams;
+            delta[(int)ST.getParams, (int)pN.Great_Params].stack = POP;
+            delta[(int)ST.getParams, (int)pN.Great_Params].action = "";
+            // < встретили новый параметр
+            delta[(int)ST.getParams, (int)pN.Less_Params].nextState = ST.getParams;
+            delta[(int)ST.getParams, (int)pN.Less_Params].stack = '+';
+            delta[(int)ST.getParams, (int)pN.Less_Params].action = "";
+            // встретили букву, читаем имя параметра
+            delta[(int)ST.getParams, (int)pN.Letter_Params].nextState = ST.getParamName;
+            delta[(int)ST.getParams, (int)pN.Letter_Params].action = "addBuf";
+            // встретили букву, добавляем
+            delta[(int)ST.getParamName, (int)pN.Letter_Params].nextState = ST.getParamName;
+            delta[(int)ST.getParamName, (int)pN.Letter_Params].action = "addBuf";
+            // встретили цифру, добавляем
+            delta[(int)ST.getParamName, (int)pN.Number_Params].nextState = ST.getParamName;
+            delta[(int)ST.getParamName, (int)pN.Number_Params].action = "addBuf";
+            // встретили >, добавляем параметр, уходим в getParams
+            delta[(int)ST.getParamName, (int)pN.Great_Params].nextState = ST.getParams;
+            delta[(int)ST.getParamName, (int)pN.Great_Params].stack = POP;
+            delta[(int)ST.getParamName, (int)pN.Great_Params].action = "addParam";
+            // встретили <, добавляем параметр, уходим в getParams
+            delta[(int)ST.getParamName, (int)pN.Less_Params].nextState = ST.getParams;
+            delta[(int)ST.getParamName, (int)pN.Less_Params].stack = '+';
+            delta[(int)ST.getParamName, (int)pN.Less_Params].action = "addParam";
+            // встретили пробел, добавляем параметр, уходим в moreParams 
+            delta[(int)ST.getParamName, (int)pN.Spc_Params].nextState = ST.moreParams;
+            delta[(int)ST.getParamName, (int)pN.Spc_Params].action = "addParam";
+            // встретили запятую, добавляем параметр, уходим в getParams 
+            delta[(int)ST.getParamName, (int)pN.Comma_Params].nextState = ST.getParams;
+            delta[(int)ST.getParamName, (int)pN.Comma_Params].stack = 'm';
+            delta[(int)ST.getParamName, (int)pN.Comma_Params].action = "addParam";
+            // встретили пробел, пропускаем
+            delta[(int)ST.moreParams, (int)pN.Spc_Params].nextState = ST.moreParams;
+            delta[(int)ST.moreParams, (int)pN.Spc_Params].action = "";
+            // встретили >, идем в getParams
+            delta[(int)ST.moreParams, (int)pN.Great_Params].nextState = ST.getParams;
+            delta[(int)ST.moreParams, (int)pN.Great_Params].stack = POP;
+            delta[(int)ST.moreParams, (int)pN.Great_Params].action = "";
+            // встретили <, идем в getParams
+            delta[(int)ST.moreParams, (int)pN.Less_Params].nextState = ST.getParams;
+            delta[(int)ST.moreParams, (int)pN.Less_Params].stack = '+';
+            delta[(int)ST.moreParams, (int)pN.Less_Params].action = "addParam";
+            // встретили , идем в getParams
+            delta[(int)ST.moreParams, (int)pN.Comma_Params].nextState = ST.getParams;
+            delta[(int)ST.moreParams, (int)pN.Comma_Params].stack = 'm'; 
+            delta[(int)ST.moreParams, (int)pN.Comma_Params].action = ""; 
+            // нужно добавить еще один параметр, пробелы пропускаем
             delta[(int)ST.getParams, (int)pN.Spc_MoreParams].nextState = ST.getParams;
-            delta[(int)ST.getParams, (int)pN.Spc_MoreParams].stack = "m";
             delta[(int)ST.getParams, (int)pN.Spc_MoreParams].action = "";
-            // , 
-            delta[(int)ST.getParams, (int)pN.Comma_MoreParams].nextState = ST.getParams;
-            delta[(int)ST.getParams, (int)pN.Comma_MoreParams].stack = "ma";
-            delta[(int)ST.getParams, (int)pN.Comma_MoreParams].action = "";
-            // , 
-            delta[(int)ST.getParams, (int)pN.Spc_AddParam].nextState = ST.getParams;
-            delta[(int)ST.getParams, (int)pN.Spc_AddParam].stack = "ma";
-            delta[(int)ST.getParams, (int)pN.Spc_AddParam].action = "";
-            // Буква, ждем дополнительные параметры 
-            delta[(int)ST.getParams, (int)pN.Letter_AddParam].nextState = ST.getParamName;
-            delta[(int)ST.getParams, (int)pN.Letter_AddParam].stack = "";
-            delta[(int)ST.getParams, (int)pN.Letter_AddParam].action = "addBuf";
-            // > параметры закончены, идем в spaces читаем пробелы, ждем halt
-            delta[(int)ST.getParams, (int)pN.Great_MoreParams].nextState = ST.spaces;
-            delta[(int)ST.getParams, (int)pN.Great_MoreParams].stack = "e";
-            delta[(int)ST.getParams, (int)pN.Great_MoreParams].action = "";
-            // читаем пробелы, ждем halt
-            delta[(int)ST.spaces, (int)pN.Spc_End].nextState = ST.spaces;
-            delta[(int)ST.spaces, (int)pN.Spc_End].stack = "e";
-            delta[(int)ST.spaces, (int)pN.Spc_End].action = "";
-            // разбор закончен! 
-            delta[(int)ST.spaces, (int)pN.Halt_End].nextState = ST.halt;
-            delta[(int)ST.spaces, (int)pN.Halt_End].stack = "";
-            delta[(int)ST.spaces, (int)pN.Halt_End].action = "";
+            // нужно добавить еще один параметр. Буква. Дальше как обычно
+            delta[(int)ST.getParams, (int)pN.Letter_MoreParams].nextState = ST.getParamName;
+            delta[(int)ST.getParams, (int)pN.Letter_MoreParams].stack = POP;
+            delta[(int)ST.getParams, (int)pN.Letter_MoreParams].action = "addBuf";
+            // встретили запятую
+            delta[(int)ST.getParams, (int)pN.Comma_Params].nextState = ST.getParams;
+            delta[(int)ST.getParams, (int)pN.Comma_Params].action = "";
+
+            // Заканчиваем разбор (считали посленюю >)
+            delta[(int)ST.getParams, (int)pN.Spc_Empty].nextState = ST.getParams;
+            delta[(int)ST.getParams, (int)pN.Spc_Empty].action = "";
+            delta[(int)ST.getParams, (int)pN.Halt_Empty].nextState = ST.halt;
+            delta[(int)ST.getParams, (int)pN.Halt_Empty].action = "";
+            
+
 
             string input_file;
 
